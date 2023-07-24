@@ -25,11 +25,13 @@ import (
 	"hash/crc32"
 	"math/rand"
 	"net/http"
+	"os"
 	"reflect"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/SaoNetwork/sao-client-go/sdk"
 	"github.com/dchest/siphash"
 	"github.com/dustin/go-humanize"
 	"github.com/google/uuid"
@@ -398,6 +400,36 @@ func newErasureSets(ctx context.Context, endpoints PoolEndpoints, storageDisks [
 		}
 	}
 
+	nodeUrl := os.Getenv("SAO_NODE_URL")
+	if nodeUrl == "" {
+		nodeUrl = "http://127.0.0.1:5151/rpc/v0"
+	}
+
+	chainUrl := os.Getenv("SAO_CHAIN_URL")
+	if chainUrl == "" {
+		chainUrl = "http://127.0.0.1:26657"
+	}
+
+	keyName := os.Getenv("SAO_S3_GATEWAY_KEY_NAME")
+	if keyName == "" {
+		return nil, errors.New("SAO_S3_GATEWAY_KEY_NAME environment variable is not set")
+	}
+
+	keyHome := os.Getenv("SAO_KEYRING_HOME")
+	if keyHome == "" {
+		return nil, errors.New("SAO_KEYRING_HOME environment variable is not set")
+	}
+
+	saoApiUrl := os.Getenv("SAO_API_URL")
+	if saoApiUrl == "" {
+		saoApiUrl = "http://127.0.0.1:1317"
+	}
+
+	client, err := sdk.NewSaoClientApi(ctx, nodeUrl, chainUrl, keyName, keyHome)
+	if err != nil {
+		logger.Error("Error creating Sao client", err)
+	}
+
 	var wg sync.WaitGroup
 	for i := 0; i < setCount; i++ {
 		wg.Add(1)
@@ -452,6 +484,9 @@ func newErasureSets(ctx context.Context, endpoints PoolEndpoints, storageDisks [
 				nsMutex:            mutex,
 				bp:                 bp,
 				bpOld:              bpOld,
+				saoClient:          client,
+				saoApiEndpoint:     saoApiUrl,
+				saoKeyName:         keyName,
 			}
 		}(i)
 	}

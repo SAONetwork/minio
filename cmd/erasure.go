@@ -28,6 +28,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/SaoNetwork/sao-client-go/sdk"
 	"github.com/minio/madmin-go/v3"
 	"github.com/minio/minio/internal/bpool"
 	"github.com/minio/minio/internal/dsync"
@@ -71,6 +72,12 @@ type erasureObjects struct {
 	// Byte pools used for temporary i/o buffers,
 	// legacy objects.
 	bpOld *bpool.BytePoolCap
+
+	saoClient *sdk.SaoClientApi
+
+	saoApiEndpoint string
+
+	saoKeyName string
 }
 
 // NewNSLock - initialize a new namespace RWLocker instance.

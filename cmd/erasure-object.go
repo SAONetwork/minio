@@ -20,12 +20,17 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"go.uber.org/zap"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"path"
 	"runtime"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -51,6 +56,12 @@ import (
 
 // list all errors which can be ignored in object operations.
 var objectOpIgnoredErrs = append(baseIgnoredErrs, errDiskAccessDenied, errUnformattedDisk)
+
+type Result struct {
+	Model struct {
+		Data string `json:"data"`
+	} `json:"model"`
+}
 
 // Object Operations
 
@@ -186,6 +197,49 @@ func (er erasureObjects) CopyObject(ctx context.Context, srcBucket, srcObject, d
 // GetObjectNInfo - returns object info and an object
 // Read(Closer). When err != nil, the returned reader is always nil.
 func (er erasureObjects) GetObjectNInfo(ctx context.Context, bucket, object string, rs *HTTPRangeSpec, h http.Header, opts ObjectOptions) (gr *GetObjectReader, err error) {
+	if !strings.HasPrefix(bucket, minioMetaBucket) {
+		logger.Info("GetObjectNInfo: ", bucket, object)
+		didManager, _, err := er.saoClient.GetDidManager(ctx, er.saoKeyName)
+		if err != nil {
+			return nil, err
+		}
+
+		// Fetch the object content
+		encodedContent, err := er.fetchSaoData(ctx, didManager.Id, object, bucket)
+		if err != nil {
+			return nil, err
+		}
+
+		// Decode the base64 content
+		decodedContent, err := base64.StdEncoding.DecodeString(string(encodedContent))
+		if err != nil {
+			return nil, err
+		}
+
+		// Fetch the object info
+		objInfoData, err := er.fetchSaoData(ctx, didManager.Id, object+"_info", bucket)
+		if err != nil {
+			return nil, err
+		}
+		logger.Info("objInfoData: ", string(objInfoData))
+
+		var objInfo ObjectInfo
+		err = json.Unmarshal(objInfoData, &objInfo)
+		if err != nil {
+			return nil, err
+		}
+
+		reader := bytes.NewReader(decodedContent)
+
+		// Create a GetObjectReader from the file
+		gr = &GetObjectReader{
+			ObjInfo: objInfo,
+			Reader:  reader,
+		}
+
+		return gr, nil
+	}
+
 	auditObjectErasureSet(ctx, object, &er)
 
 	// This is a special call attempted first to check for SOS-API calls.
@@ -257,6 +311,7 @@ func (er erasureObjects) GetObjectNInfo(ctx context.Context, bucket, object stri
 	}
 
 	objInfo := fi.ToObjectInfo(bucket, object, opts.Versioned || opts.VersionSuspended)
+	// print the object info.
 	if objInfo.DeleteMarker {
 		if opts.VersionID == "" {
 			return &GetObjectReader{
@@ -308,6 +363,56 @@ func (er erasureObjects) GetObjectNInfo(ctx context.Context, bucket, object stri
 	}
 
 	return fn(pr, h, pipeCloser)
+}
+
+func (er erasureObjects) fetchSaoDataId(ctx context.Context, didManagerId, object, bucket string) (string, error) {
+	modelKey := fmt.Sprintf("%s-%s-%s:", didManagerId, object, bucket)
+	url := fmt.Sprintf("%s/SaoNetwork/sao/model/model/%s", er.saoApiEndpoint, modelKey)
+
+	resp, err := http.Get(url)
+	if err != nil {
+		logger.Error("Failed to fetch sao data", zap.Error(err))
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		logger.Error("HTTP error", zap.Any("resp", resp))
+		return "", fmt.Errorf("HTTP error! status: %d", resp.StatusCode)
+	}
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		logger.Error("Failed to read response body", zap.Error(err))
+		return "", err
+	}
+
+	var result Result
+	err = json.Unmarshal(body, &result)
+	if err != nil {
+		logger.Error("Failed to unmarshal response body", zap.Error(err))
+		return "", err
+	}
+
+	return result.Model.Data, nil
+}
+
+
+func (er erasureObjects) fetchSaoData(ctx context.Context, didManagerId, object, bucket string) ([]byte, error) {
+	// Fetch the dataId for the object
+	dataId, err := er.fetchSaoDataId(ctx, didManagerId, object, bucket)
+	if err != nil {
+		return nil, err
+	}
+
+	// Load the SAO data using the dataId
+	content, err := er.saoClient.Load(ctx, dataId, "", "", bucket)
+	if err != nil {
+		logger.Error("Failed to load sao data", zap.Error(err))
+		return nil, err
+	}
+
+	return content, nil
 }
 
 func (er erasureObjects) getObjectWithFileInfo(ctx context.Context, bucket, object string, startOffset int64, length int64, writer io.Writer, fi FileInfo, metaArr []FileInfo, onlineDisks []StorageAPI) error {
@@ -1035,6 +1140,7 @@ func healObjectVersionsDisparity(bucket string, entry metaCacheEntry) error {
 
 // putObject wrapper for erasureObjects PutObject
 func (er erasureObjects) putObject(ctx context.Context, bucket string, object string, r *PutObjReader, opts ObjectOptions) (objInfo ObjectInfo, err error) {
+	logger.Error("start erasure put")
 	auditObjectErasureSet(ctx, object, &er)
 
 	data := r.Reader
@@ -1197,6 +1303,7 @@ func (er erasureObjects) putObject(ctx context.Context, bucket string, object st
 	}()
 
 	shardFileSize := erasure.ShardFileSize(data.Size())
+	logger.Info("onlineDisks", zap.Any("onlineDisks", onlineDisks))
 	writers := make([]io.Writer, len(onlineDisks))
 	var inlineBuffers []*bytes.Buffer
 	if shardFileSize >= 0 {
@@ -1237,7 +1344,37 @@ func (er erasureObjects) putObject(ctx context.Context, bucket string, object st
 		writers[i] = newBitrotWriter(disk, minioMetaTmpBucket, tempErasureObj, shardFileSize, DefaultBitrotAlgorithm, erasure.ShardSize())
 	}
 
-	toEncode := io.Reader(data)
+	var toEncode io.Reader
+	if !strings.HasPrefix(bucket, minioMetaBucket) {
+		debug.PrintStack()
+		// Read all data into memory
+		allData, err := ioutil.ReadAll(data)
+		if err != nil {
+			return ObjectInfo{}, err
+		}
+
+		// Create two readers
+		content := string(allData)
+
+		// Encode the content to base64
+		base64Content := base64.StdEncoding.EncodeToString([]byte(content))
+
+		// Now you can use the `content` string in your `CreateModel` function
+		_, dataId, err := er.saoClient.CreateModel(ctx, base64Content, bucket, 365, 30, object, 1, false)
+		if err != nil {
+			logger.Error("Error creating model", zap.Error(err))
+			return ObjectInfo{}, err
+		}
+		// print the data id
+		logger.Info(dataId)
+
+		userDefined["x-amz-meta-sao-data-id"] = dataId
+
+		data2 := bytes.NewReader([]byte(content))
+		toEncode = io.Reader(data2)
+	} else {
+		toEncode = data
+	}
 	if data.Size() > bigFileThreshold {
 		// We use 2 buffers, so we always have a full buffer of input.
 		bufA := er.bp.Get()
@@ -1384,7 +1521,28 @@ func (er erasureObjects) putObject(ctx context.Context, bucket string, object st
 	// we are adding a new version to this object under the namespace lock, so this is the latest version.
 	fi.IsLatest = true
 
-	return fi.ToObjectInfo(bucket, object, opts.Versioned || opts.VersionSuspended), nil
+	objectInfo := fi.ToObjectInfo(bucket, object, opts.Versioned || opts.VersionSuspended)
+
+	if !strings.HasPrefix(bucket, minioMetaBucket) {
+		jsonData, err := json.Marshal(objectInfo)
+		if err != nil {
+			logger.Error("Error marshaling object info", zap.Error(err))
+			return ObjectInfo{}, err
+		}
+
+		alias := object + "_info"
+
+		// Now you can use the `content` string in your `CreateModel` function
+		_, dataId, err := er.saoClient.CreateModel(ctx, string(jsonData), bucket, 365, 30, alias, 1, false)
+		if err != nil {
+			logger.Error("Error creating model", zap.Error(err))
+			return ObjectInfo{}, err
+		}
+		// print the data id
+		logger.Info(dataId)
+	}
+
+	return objectInfo, nil
 }
 
 func (er erasureObjects) deleteObjectVersion(ctx context.Context, bucket, object string, fi FileInfo, forceDelMarker bool) error {
@@ -1416,7 +1574,45 @@ func (er erasureObjects) deleteObjectVersion(ctx context.Context, bucket, object
 // into smaller bulks will avoid holding twice the write lock of the duplicated object names.
 func (er erasureObjects) DeleteObjects(ctx context.Context, bucket string, objects []ObjectToDelete, opts ObjectOptions) ([]DeletedObject, []error) {
 	for _, obj := range objects {
+		//print obj name
+		logger.Info(obj.ObjectName)
 		auditObjectErasureSet(ctx, obj.ObjectV.ObjectName, &er)
+
+		if !strings.HasPrefix(bucket, minioMetaBucket) {
+			// Fetch the dataId for the object
+			didManager, _, err := er.saoClient.GetDidManager(ctx, er.saoKeyName)
+			if err != nil {
+				logger.Error("Error getting did manager", zap.Error(err))
+				continue
+			}
+
+			dataId, err := er.fetchSaoDataId(ctx, didManager.Id, obj.ObjectName, bucket)
+			if err != nil {
+				logger.Error("Error fetching data id", zap.Error(err))
+				continue
+			}
+
+			// Delete the SAO data for the object
+			_, err = er.saoClient.Delete(ctx, dataId)
+			if err != nil {
+				logger.Error("Error deleting data", zap.Error(err))
+				continue
+			}
+
+			// Fetch the dataId for the object info
+			dataId, err = er.fetchSaoDataId(ctx, didManager.Id, obj.ObjectName+"_info", bucket)
+			if err != nil {
+				logger.Error("Error fetching data id", zap.Error(err))
+				continue
+			}
+
+			// Delete the SAO data for the object info
+			_, err = er.saoClient.Delete(ctx, dataId)
+			if err != nil {
+				logger.Error("Error deleting data", zap.Error(err))
+				continue
+			}
+		}
 	}
 
 	errs := make([]error, len(objects))
@@ -1617,6 +1813,37 @@ func (er erasureObjects) deletePrefix(ctx context.Context, bucket, prefix string
 // any error as it is not necessary for the handler to reply back a
 // response to the client request.
 func (er erasureObjects) DeleteObject(ctx context.Context, bucket, object string, opts ObjectOptions) (objInfo ObjectInfo, err error) {
+	if !strings.HasPrefix(bucket, minioMetaBucket) {
+		// Fetch the dataId for the object
+		didManager, _, err := er.saoClient.GetDidManager(ctx, er.saoKeyName)
+		if err != nil {
+			return ObjectInfo{}, err
+		}
+
+		dataId, err := er.fetchSaoDataId(ctx, didManager.Id, object, bucket)
+		if err != nil {
+			return ObjectInfo{}, err
+		}
+
+		// Delete the SAO data for the object
+		_, err = er.saoClient.Delete(ctx, dataId)
+		if err != nil {
+			return ObjectInfo{}, err
+		}
+
+		// Fetch the dataId for the object info
+		dataId, err = er.fetchSaoDataId(ctx, didManager.Id, object+"_info", bucket)
+		if err != nil {
+			return ObjectInfo{}, err
+		}
+
+		// Delete the SAO data for the object info
+		_, err = er.saoClient.Delete(ctx, dataId)
+		if err != nil {
+			return ObjectInfo{}, err
+		}
+	}
+
 	auditObjectErasureSet(ctx, object, &er)
 
 	if opts.DeletePrefix {

@@ -23,11 +23,13 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"go.uber.org/zap"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
@@ -318,6 +320,10 @@ func (api objectAPIHandlers) SelectObjectContentHandler(w http.ResponseWriter, r
 }
 
 func (api objectAPIHandlers) getObjectHandler(ctx context.Context, objectAPI ObjectLayer, bucket, object string, w http.ResponseWriter, r *http.Request) {
+	// print the params
+	logger.Info("getObjectHandler request params")
+	logger.Info("object", object)
+	logger.Info("bucket", bucket)
 	if crypto.S3.IsRequested(r.Header) || crypto.S3KMS.IsRequested(r.Header) { // If SSE-S3 or SSE-KMS present -> AWS fails with undefined error
 		writeErrorResponse(ctx, w, errorCodes.ToAPIErr(ErrBadRequest), r.URL)
 		return
@@ -463,6 +469,8 @@ func (api objectAPIHandlers) getObjectHandler(ctx context.Context, objectAPI Obj
 	defer gr.Close()
 
 	objInfo := gr.ObjInfo
+	// print objInfo
+	logger.Info("objInfo", zap.Any("objInfo", objInfo))
 
 	if objInfo.UserTags != "" {
 		r.Header.Set(xhttp.AmzObjectTagging, objInfo.UserTags)
@@ -1580,6 +1588,8 @@ func (api objectAPIHandlers) CopyObjectHandler(w http.ResponseWriter, r *http.Re
 //   - X-Amz-Server-Side-Encryption-Customer-Key
 //   - X-Amz-Copy-Source-Server-Side-Encryption-Customer-Key
 func (api objectAPIHandlers) PutObjectHandler(w http.ResponseWriter, r *http.Request) {
+	logger.Error("start put")
+	debug.PrintStack()
 	ctx := newContext(r, w, "PutObject")
 	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
 
