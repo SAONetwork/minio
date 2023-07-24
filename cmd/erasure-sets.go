@@ -22,6 +22,8 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"github.com/mitchellh/go-homedir"
+	"github.com/pelletier/go-toml"
 	"hash/crc32"
 	"math/rand"
 	"net/http"
@@ -92,6 +94,12 @@ type erasureSets struct {
 	deploymentID     [16]byte
 
 	lastConnectDisksOpTime time.Time
+}
+
+type SaoClientConfig struct {
+	Gateway      string
+	ChainAddress string
+	KeyName      string
 }
 
 func (s *erasureSets) getDiskMap() map[Endpoint]StorageAPI {
@@ -400,21 +408,31 @@ func newErasureSets(ctx context.Context, endpoints PoolEndpoints, storageDisks [
 		}
 	}
 
-	nodeUrl := os.Getenv("SAO_NODE_URL")
-	if nodeUrl == "" {
-		nodeUrl = "http://127.0.0.1:5151/rpc/v0"
+	// Load configuration from file
+	configPath := os.Getenv("SAO_CONFIG_PATH")
+	if configPath == "" {
+		configPath = "~/.sao-cli/config.toml"
 	}
 
-	chainUrl := os.Getenv("SAO_CHAIN_URL")
-	if chainUrl == "" {
-		chainUrl = "http://127.0.0.1:26657"
+	// Expand the ~ symbol into the current user's home directory
+	configPath, err := homedir.Expand(configPath)
+	if err != nil {
+		logger.Error("Error expanding home directory in config path", err)
+		return nil, err
 	}
 
-	keyName := os.Getenv("SAO_S3_GATEWAY_KEY_NAME")
-	if keyName == "" {
-		return nil, errors.New("SAO_S3_GATEWAY_KEY_NAME environment variable is not set")
+	// Load configuration from file
+	config, err := loadSaoConfig(configPath)
+	if err != nil {
+		logger.Error("Error loading configuration", err)
+		return nil, err
 	}
 
+	nodeUrl := config.Gateway
+	chainUrl := config.ChainAddress
+	keyName := config.KeyName
+
+	// Get KeyHome and SaoApiUrl from environment variables
 	keyHome := os.Getenv("SAO_KEYRING_HOME")
 	if keyHome == "" {
 		return nil, errors.New("SAO_KEYRING_HOME environment variable is not set")
@@ -428,6 +446,7 @@ func newErasureSets(ctx context.Context, endpoints PoolEndpoints, storageDisks [
 	client, err := sdk.NewSaoClientApi(ctx, nodeUrl, chainUrl, keyName, keyHome)
 	if err != nil {
 		logger.Error("Error creating Sao client", err)
+		return nil, err
 	}
 
 	var wg sync.WaitGroup
@@ -505,6 +524,21 @@ func newErasureSets(ctx context.Context, endpoints PoolEndpoints, storageDisks [
 	}
 
 	return s, nil
+}
+
+func loadSaoConfig(path string) (*SaoClientConfig, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var config SaoClientConfig
+	if err := toml.NewDecoder(file).Decode(&config); err != nil {
+		return nil, err
+	}
+
+	return &config, nil
 }
 
 // cleanup ".trash/" folder every 5m minutes with sufficient sleep cycles, between each

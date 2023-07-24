@@ -65,6 +65,7 @@ require (
 	github.com/nats-io/stan.go v0.10.4
 	github.com/ncw/directio v1.0.5
 	github.com/nsqio/go-nsq v1.1.0
+	github.com/pelletier/go-toml v1.9.5
 	github.com/philhofer/fwd v1.1.2
 	github.com/pierrec/lz4 v2.6.1+incompatible
 	github.com/pkg/errors v0.9.1
@@ -361,3 +362,5 @@ require (
 replace github.com/gogo/protobuf => github.com/regen-network/protobuf v1.3.3-alpha.regen.1
 
 replace github.com/SaoNetwork/sao-client-go => ../saoclient-sdk-go
+
+replace github.com/SaoNetwork/sao-node => ../sao-node
