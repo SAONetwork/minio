@@ -23,7 +23,6 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
-	"go.uber.org/zap"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -469,8 +468,6 @@ func (api objectAPIHandlers) getObjectHandler(ctx context.Context, objectAPI Obj
 	defer gr.Close()
 
 	objInfo := gr.ObjInfo
-	// print objInfo
-	logger.Info("objInfo", zap.Any("objInfo", objInfo))
 
 	if objInfo.UserTags != "" {
 		r.Header.Set(xhttp.AmzObjectTagging, objInfo.UserTags)
