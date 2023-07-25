@@ -361,35 +361,19 @@ func (er erasureObjects) GetObjectNInfo(ctx context.Context, bucket, object stri
 }
 
 func (er erasureObjects) fetchSaoDataId(ctx context.Context, didManagerId, object, bucket string) (string, error) {
-	modelKey := fmt.Sprintf("%s-%s-%s:", didManagerId, object, bucket)
-	url := fmt.Sprintf("%s/SaoNetwork/sao/model/model/%s", er.saoApiEndpoint, modelKey)
-
-	resp, err := http.Get(url)
+	modelKey := fmt.Sprintf("%s-%s-%s", didManagerId, object, bucket)
+	logger.Info("modelKey: ", modelKey)
+	// Call saoClient.GetModel() to get the dataId
+	modelResponse, err := er.saoClient.GetModel(ctx, modelKey)
 	if err != nil {
-		logger.Error("Failed to fetch sao data", zap.Error(err))
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		logger.Error("HTTP error", zap.Any("resp", resp))
-		return "", fmt.Errorf("HTTP error! status: %d", resp.StatusCode)
-	}
-
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		logger.Error("Failed to read response body", zap.Error(err))
+		logger.Error("Failed to fetch sao data Id", zap.Error(err))
 		return "", err
 	}
 
-	var result Result
-	err = json.Unmarshal(body, &result)
-	if err != nil {
-		logger.Error("Failed to unmarshal response body", zap.Error(err))
-		return "", err
-	}
+	logger.Info(modelResponse.Model.Data)
 
-	return result.Model.Data, nil
+	// Return the dataId from the modelResponse
+	return modelResponse.Model.Data, nil
 }
 
 

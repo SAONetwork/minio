@@ -435,12 +435,12 @@ func newErasureSets(ctx context.Context, endpoints PoolEndpoints, storageDisks [
 	// Get KeyHome and SaoApiUrl from environment variables
 	keyHome := os.Getenv("SAO_KEYRING_HOME")
 	if keyHome == "" {
-		return nil, errors.New("SAO_KEYRING_HOME environment variable is not set")
+		keyHome = "~/.sao"
 	}
-
-	saoApiUrl := os.Getenv("SAO_API_URL")
-	if saoApiUrl == "" {
-		saoApiUrl = "http://127.0.0.1:1317"
+	keyHome, err = homedir.Expand(keyHome)
+	if err != nil {
+		logger.Error("Error expanding home directory in config path", err)
+		return nil, err
 	}
 
 	client, err := sdk.NewSaoClientApi(ctx, nodeUrl, chainUrl, keyName, keyHome)
@@ -504,7 +504,6 @@ func newErasureSets(ctx context.Context, endpoints PoolEndpoints, storageDisks [
 				bp:                 bp,
 				bpOld:              bpOld,
 				saoClient:          client,
-				saoApiEndpoint:     saoApiUrl,
 				saoKeyName:         keyName,
 			}
 		}(i)

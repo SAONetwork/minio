@@ -75,8 +75,6 @@ type erasureObjects struct {
 
 	saoClient *sdk.SaoClientApi
 
-	saoApiEndpoint string
-
 	saoKeyName string
 }
 
