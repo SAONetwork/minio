@@ -1,6 +1,6 @@
 # Developer Guide: Using Go with Minio and SAONetwork
 
-This guide will walk you through the process of using Go with Minio and SAONetwork.
+This guide will walk you through the process of using Go with Minio and SAONetwork to upload and download data.
 
 ## Prerequisites
 
@@ -48,24 +48,9 @@ func main() {
 
 Replace `"http://localhost:9000"`, `"minioadmin"`, and `"minioadmin"` with your Minio server's URL and credentials.
 
-## Step 3: Create a Bucket
+## Step 3: Upload a File
 
-Add the following code to `main.go` to create a new bucket:
-
-```go
-_, err := s3Client.CreateBucket(&s3.CreateBucketInput{
-	Bucket: aws.String("mybucket"),
-})
-if err != nil {
-	log.Fatal(err)
-}
-```
-
-This code checks if a bucket named 'mybucket' exists, and if it doesn't, it creates one.
-
-## Step 4: Upload a File
-
-Add the following code to `main.go` to upload a file to the bucket:
+Add the following code to `main.go` to upload a file:
 
 ```go
 file, err := os.Open("test.txt")
@@ -79,8 +64,21 @@ var size int64 = fileInfo.Size()
 buffer := make([]byte, size)
 file.Read(buffer)
 
+_, err = s3Client.HeadBucket(&s3.HeadBucketInput{
+	Bucket: aws.String("platformId"), // This is the platformId in SAO Network
+})
+
+if err != nil {
+	_, err = s3Client.CreateBucket(&s3.CreateBucketInput{
+		Bucket: aws.String("platformId"), // This is the platformId in SAO Network
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
 _, err = s3Client.PutObject(&s3.PutObjectInput{
-	Bucket:               aws.String("mybucket"),
+	Bucket:               aws.String("platformId"), // This is the platformId in SAO Network
 	Key:                  aws.String(file.Name()),
 	Body:                 bytes.NewReader(buffer),
 	ContentLength:        aws.Int64(size),
@@ -92,15 +90,15 @@ if err != nil {
 }
 ```
 
-This code uploads a file named 'test.txt' to the 'mybucket' bucket.
+This code first checks if a bucket named 'mybucket' exists, and if it doesn't, it creates one. Then it uploads a file named 'test.txt' to the 'mybucket' bucket. In SAO Network, the 'bucket' concept is represented as 'platformId', which doesn't need to be created beforehand.
 
-## Step 5: Download a File
+## Step 4: Download a File
 
-Add the following code to `main.go` to download the file from the bucket:
+Add the following code to `main.go` to download the file:
 
 ```go
 output, err := s3Client.GetObject(&s3.GetObjectInput{
-	Bucket: aws.String("mybucket"),
+	Bucket: aws.String("platformId"), // This is the platformId in SAO Network
 	Key:    aws.String("test.txt"),
 })
 if err != nil {
@@ -118,7 +116,7 @@ fmt.Println(string(body))
 
 This code downloads the 'test.txt' file from the 'mybucket' bucket and prints its content.
 
-## Step 6: Run the Go file
+## Step 5: Run the Go file
 
 You can run the Go file with the following command:
 
@@ -128,4 +126,4 @@ go run main.go
 
 ## Conclusion
 
-You should now have a working Go application that interacts with a Minio server configured to work with SAONetwork. You can use this application to create buckets, upload files, and download files.
+You should now have a working Go application that interacts with a Minio server configured to work with SAONetwork. You can use this application to upload and download data. In SAO Network, the 'bucket' concept is represented as 'platformId', which doesn't need to be created beforehand. However, the bucket creation step is still necessary for Minio to function correctly.

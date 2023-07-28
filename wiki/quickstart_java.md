@@ -1,6 +1,6 @@
 # Developer Guide: Using Java with Minio and SAONetwork
 
-This guide will walk you through the process of using Java with Minio and SAONetwork.
+This guide will walk you through the process of using Java with Minio and SAONetwork to upload and download data.
 
 ## Prerequisites
 
@@ -76,13 +76,10 @@ public class S3Service {
         this.s3Client = s3Client;
     }
 
-    public void createBucket(String bucketName) {
+    public void uploadFile(String bucketName, String fileName, File file) {
         if (!s3Client.doesBucketExistV2(bucketName)) {
             s3Client.createBucket(bucketName);
         }
-    }
-
-    public void uploadFile(String bucketName, String fileName, File file) {
         s3Client.putObject(bucketName, fileName, file);
     }
 
@@ -98,10 +95,12 @@ public class S3Service {
 }
 ```
 
+In this service, the `uploadFile` method first checks if a bucket exists in Minio, and if it doesn't, it creates one. Then it uploads a file to the bucket. In SAO Network, the 'bucket' concept is represented as 'platformId', which doesn't need to be created beforehand.
+
 ## Step 5: Use the Service in your application
 
-You can now use the `S3Service` in your controllers to create buckets, upload files, download files, and retrieve object metadata.
+You can now use the `S3Service` in your controllers to upload files, download files, and retrieve object metadata.
 
 ## Conclusion
 
-You should now have a working Java application that interacts with a Minio server configured to work with SAONetwork. You can use this application to create buckets, upload files, download files, and retrieve object metadata. Please note that you may need to adjust the code to fit your needs.
+You should now have a working Java application that interacts with a Minio server configured to work with SAO Network. You can use this application to upload and download data. In SAO Network, the 'bucket' concept is represented as 'platformId', which doesn't need to be created beforehand. However, the bucket creation step is still necessary for Minio to function correctly.
