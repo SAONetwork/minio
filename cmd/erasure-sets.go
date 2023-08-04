@@ -100,6 +100,7 @@ type SaoClientConfig struct {
 	Gateway      string
 	ChainAddress string
 	KeyName      string
+	MultiAddr    string
 }
 
 func (s *erasureSets) getDiskMap() map[Endpoint]StorageAPI {
@@ -505,6 +506,7 @@ func newErasureSets(ctx context.Context, endpoints PoolEndpoints, storageDisks [
 				bpOld:              bpOld,
 				saoClient:          client,
 				saoKeyName:         keyName,
+				saoMultiAddr:  		config.MultiAddr,
 			}
 		}(i)
 	}

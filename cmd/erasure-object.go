@@ -28,6 +28,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"os"
 	"path"
 	"runtime"
 	"runtime/debug"
@@ -205,13 +206,7 @@ func (er erasureObjects) GetObjectNInfo(ctx context.Context, bucket, object stri
 		}
 
 		// Fetch the object content
-		encodedContent, err := er.fetchSaoData(ctx, didManager.Id, object, bucket)
-		if err != nil {
-			return nil, err
-		}
-
-		// Decode the base64 content
-		decodedContent, err := base64.StdEncoding.DecodeString(string(encodedContent))
+		fileContent, err := er.fetchSaoData(ctx, didManager.Id, "file_"+object, bucket)
 		if err != nil {
 			return nil, err
 		}
@@ -229,7 +224,15 @@ func (er erasureObjects) GetObjectNInfo(ctx context.Context, bucket, object stri
 			return nil, err
 		}
 
-		reader := bytes.NewReader(decodedContent)
+		if objInfo.UserDefined["x-amz-meta-use-libp2p"] != "true" {
+			// Decode the base64 content
+			fileContent, err = base64.StdEncoding.DecodeString(string(fileContent))
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		reader := bytes.NewReader(fileContent)
 
 		// Create a GetObjectReader from the file
 		gr = &GetObjectReader{
@@ -1332,25 +1335,78 @@ func (er erasureObjects) putObject(ctx context.Context, bucket string, object st
 			return ObjectInfo{}, err
 		}
 
-		// Create two readers
-		content := string(allData)
-
-		// Encode the content to base64
-		base64Content := base64.StdEncoding.EncodeToString([]byte(content))
-
-		// Now you can use the `content` string in your `CreateModel` function
-		_, dataId, err := er.saoClient.CreateModel(ctx, base64Content, bucket, 365, 30, object, 1, false)
-		if err != nil {
-			logger.Error("Error creating model", zap.Error(err))
-			return ObjectInfo{}, err
-		}
-		// print the data id
-		logger.Info(dataId)
-
-		userDefined["x-amz-meta-sao-data-id"] = dataId
-
-		data2 := bytes.NewReader([]byte(content))
+		data2 := bytes.NewReader(allData)
 		toEncode = io.Reader(data2)
+
+		if er.saoMultiAddr == "" {
+			// Create two readers
+			content := string(allData)
+			// Encode the content to base64
+			base64Content := base64.StdEncoding.EncodeToString([]byte(content))
+			_, dataId, err := er.saoClient.CreateModel(ctx, base64Content, bucket, 365, 30, "file_"+object, 1, false)
+			if err != nil {
+				logger.Error("Error creating model", zap.Error(err))
+				return ObjectInfo{}, err
+			}
+			// print the data id
+			logger.Info(dataId)
+
+			userDefined["x-amz-meta-sao-data-id"] = dataId
+			userDefined["x-amz-meta-use-libp2p"] = "false"
+		} else {
+			// Create a temporary file
+			tmpfile, err := os.CreateTemp("", "sao-upload-")
+			if err != nil {
+				logger.Error("Error creating temporary file", zap.Error(err))
+			}
+			defer os.RemoveAll(tmpfile.Name()) // clean up
+
+			// Write the content to the temporary file
+			if _, err := tmpfile.Write(allData); err != nil {
+				logger.Error("Error writing to temporary file", zap.Error(err))
+			}
+
+			// Upload the temporary file to SAO
+			ss, err := er.saoClient.UploadFile(
+				ctx,
+				tmpfile.Name(),
+				er.saoMultiAddr,
+			)
+			if err != nil {
+				logger.Error("Error uploading file", zap.Error(err))
+				return ObjectInfo{}, err
+			}
+			logger.Info("cid", ss[0])
+
+			fileInfo, err := tmpfile.Stat()
+			if err != nil {
+				logger.Error("Error getting file info", zap.Error(err))
+				return ObjectInfo{}, err
+			}
+			fileSize := fileInfo.Size()
+
+			if err := tmpfile.Close(); err != nil {
+				logger.Error("Error closing temporary file", zap.Error(err))
+			}
+
+			alias, dataId, err := er.saoClient.CreateFile(
+				ctx,
+				"file_"+object,
+				ss[0],
+				bucket,
+				365,
+				30,
+				1,
+				uint64(fileSize),
+			)
+			if err != nil {
+				logger.Error("Error creating file", zap.Error(err))
+				return ObjectInfo{}, err
+			}
+			logger.Info("Alias and Data ID", zap.String("alias", alias), zap.String("dataId", dataId))
+			userDefined["x-amz-meta-sao-data-id"] = dataId
+			userDefined["x-amz-meta-use-libp2p"] = "true"
+		}
 	} else {
 		toEncode = data
 	}

@@ -76,6 +76,8 @@ type erasureObjects struct {
 	saoClient *sdk.SaoClientApi
 
 	saoKeyName string
+
+	saoMultiAddr  string
 }
 
 // NewNSLock - initialize a new namespace RWLocker instance.
