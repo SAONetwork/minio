@@ -40,6 +40,16 @@ The default credentials for Minio are `minioadmin:minioadmin`. You can change th
 
 Minio uses the existing configuration of SAOClient. For more information on how to configure SAOClient, refer to the [SAO Network CLI Tutorial](https://docs.sao.network/build-apps-on-sao-network/cli-tutorial#1.-initialize-a-cli-sao-client).
 
+In addition to the basic configuration, you can also set the `MultiAddr` option in the `config.toml` file of your SAOClient. This option specifies the multiaddress of the libp2p node that the SAOClient will connect to. If `MultiAddr` is set, file uploading to SAO will go through libp2p, which is recommended for large file uploads.
+
+Here's an example of how to set the `MultiAddr` option:
+
+```toml
+MultiAddr = "/ip4/127.0.0.1/udp/5154/quic/webtransport/certhash/uEiButuMTGfgB1bq7LbxNokyJERpX6YgWrinliofB1ZH4iw/certhash/uEiBBWmKBExCiVPuLG5ao0LUd-MxXT9Akat6gQdM3JVmomg/p2p/12D3KooWGNY3LBSyVYJ1ELS4B5WeHovZf16MiiDqp8vbtzC8tBR6"
+```
+
+Replace it with the multiaddress of your libp2p node.
+
 ## Start the Server
 
 You can start the Minio server by running the following command:

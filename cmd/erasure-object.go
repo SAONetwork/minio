@@ -1621,7 +1621,7 @@ func (er erasureObjects) DeleteObjects(ctx context.Context, bucket string, objec
 				continue
 			}
 
-			dataId, err := er.fetchSaoDataId(ctx, didManager.Id, obj.ObjectName, bucket)
+			dataId, err := er.fetchSaoDataId(ctx, didManager.Id, "file_"+obj.ObjectName, bucket)
 			if err != nil {
 				logger.Error("Error fetching data id", zap.Error(err))
 				continue
@@ -1855,7 +1855,7 @@ func (er erasureObjects) DeleteObject(ctx context.Context, bucket, object string
 			return ObjectInfo{}, err
 		}
 
-		dataId, err := er.fetchSaoDataId(ctx, didManager.Id, object, bucket)
+		dataId, err := er.fetchSaoDataId(ctx, didManager.Id, "file_"+object, bucket)
 		if err != nil {
 			return ObjectInfo{}, err
 		}
