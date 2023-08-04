@@ -1328,7 +1328,6 @@ func (er erasureObjects) putObject(ctx context.Context, bucket string, object st
 
 	var toEncode io.Reader
 	if !strings.HasPrefix(bucket, minioMetaBucket) {
-		debug.PrintStack()
 		// Read all data into memory
 		allData, err := ioutil.ReadAll(data)
 		if err != nil {

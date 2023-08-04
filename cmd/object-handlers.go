@@ -1586,7 +1586,6 @@ func (api objectAPIHandlers) CopyObjectHandler(w http.ResponseWriter, r *http.Re
 //   - X-Amz-Copy-Source-Server-Side-Encryption-Customer-Key
 func (api objectAPIHandlers) PutObjectHandler(w http.ResponseWriter, r *http.Request) {
 	logger.Error("start put")
-	debug.PrintStack()
 	ctx := newContext(r, w, "PutObject")
 	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
 
