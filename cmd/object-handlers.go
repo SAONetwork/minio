@@ -28,7 +28,6 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
-	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
