@@ -1369,6 +1369,7 @@ func (er erasureObjects) putObject(ctx context.Context, bucket string, object st
 				ctx,
 				tmpfile.Name(),
 				er.saoMultiAddr,
+				"tcp",
 			)
 			if err != nil {
 				logger.Error("Error uploading file", zap.Error(err))
