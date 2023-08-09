@@ -36,7 +36,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/klauspost/readahead"
 	"github.com/minio/madmin-go/v3"
 	"github.com/minio/minio-go/v7/pkg/tags"
 	"github.com/minio/minio/internal/bucket/lifecycle"
@@ -1325,16 +1324,12 @@ func (er erasureObjects) putObject(ctx context.Context, bucket string, object st
 		writers[i] = newBitrotWriter(disk, minioMetaTmpBucket, tempErasureObj, shardFileSize, DefaultBitrotAlgorithm, erasure.ShardSize())
 	}
 
-	var toEncode io.Reader
 	if !strings.HasPrefix(bucket, minioMetaBucket) {
 		// Read all data into memory
 		allData, err := ioutil.ReadAll(data)
 		if err != nil {
 			return ObjectInfo{}, err
 		}
-
-		data2 := bytes.NewReader(allData)
-		toEncode = io.Reader(data2)
 
 		if er.saoMultiAddr == "" {
 			// Create two readers
@@ -1406,33 +1401,31 @@ func (er erasureObjects) putObject(ctx context.Context, bucket string, object st
 			userDefined["x-amz-meta-sao-data-id"] = dataId
 			userDefined["x-amz-meta-use-libp2p"] = "true"
 		}
-	} else {
-		toEncode = data
 	}
-	if data.Size() > bigFileThreshold {
-		// We use 2 buffers, so we always have a full buffer of input.
-		bufA := er.bp.Get()
-		bufB := er.bp.Get()
-		defer er.bp.Put(bufA)
-		defer er.bp.Put(bufB)
-		ra, err := readahead.NewReaderBuffer(data, [][]byte{bufA[:fi.Erasure.BlockSize], bufB[:fi.Erasure.BlockSize]})
-		if err == nil {
-			toEncode = ra
-			defer ra.Close()
-		}
-		logger.LogIf(ctx, err)
-	}
-	n, erasureErr := erasure.Encode(ctx, toEncode, writers, buffer, writeQuorum)
-	closeBitrotWriters(writers)
-	if erasureErr != nil {
-		return ObjectInfo{}, toObjectErr(erasureErr, minioMetaTmpBucket, tempErasureObj)
-	}
-
-	// Should return IncompleteBody{} error when reader has fewer bytes
-	// than specified in request header.
-	if n < data.Size() {
-		return ObjectInfo{}, IncompleteBody{Bucket: bucket, Object: object}
-	}
+	//if data.Size() > bigFileThreshold {
+	//	// We use 2 buffers, so we always have a full buffer of input.
+	//	bufA := er.bp.Get()
+	//	bufB := er.bp.Get()
+	//	defer er.bp.Put(bufA)
+	//	defer er.bp.Put(bufB)
+	//	ra, err := readahead.NewReaderBuffer(data, [][]byte{bufA[:fi.Erasure.BlockSize], bufB[:fi.Erasure.BlockSize]})
+	//	if err == nil {
+	//		toEncode = ra
+	//		defer ra.Close()
+	//	}
+	//	logger.LogIf(ctx, err)
+	//}
+	//n, erasureErr := erasure.Encode(ctx, toEncode, writers, buffer, writeQuorum)
+	//closeBitrotWriters(writers)
+	//if erasureErr != nil {
+	//	return ObjectInfo{}, toObjectErr(erasureErr, minioMetaTmpBucket, tempErasureObj)
+	//}
+	//
+	//// Should return IncompleteBody{} error when reader has fewer bytes
+	//// than specified in request header.
+	//if n < data.Size() {
+	//	return ObjectInfo{}, IncompleteBody{Bucket: bucket, Object: object}
+	//}
 
 	var compIndex []byte
 	if opts.IndexCB != nil {
@@ -1464,7 +1457,7 @@ func (er erasureObjects) putObject(ctx context.Context, bucket string, object st
 			partsMetadata[i].Data = nil
 		}
 		// No need to add checksum to part. We already have it on the object.
-		partsMetadata[i].AddObjectPart(1, "", n, data.ActualSize(), modTime, compIndex, nil)
+		partsMetadata[i].AddObjectPart(1, "", data.Size(), data.ActualSize(), modTime, compIndex, nil)
 		partsMetadata[i].Erasure.AddChecksumInfo(ChecksumInfo{
 			PartNumber: 1,
 			Algorithm:  DefaultBitrotAlgorithm,
@@ -1494,7 +1487,7 @@ func (er erasureObjects) putObject(ctx context.Context, bucket string, object st
 	// Update `xl.meta` content on each disks.
 	for index := range partsMetadata {
 		partsMetadata[index].Metadata = userDefined
-		partsMetadata[index].Size = n
+		partsMetadata[index].Size = data.Size()
 		partsMetadata[index].ModTime = modTime
 	}
 
