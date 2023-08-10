@@ -20,14 +20,13 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
-	"io"
-	"net/http"
-
 	humanize "github.com/dustin/go-humanize"
 	"github.com/minio/madmin-go/v3"
 	"github.com/minio/minio/internal/logger"
 	"github.com/minio/mux"
 	"github.com/minio/pkg/bucket/policy"
+	"io"
+	"net/http"
 )
 
 const (
@@ -93,6 +92,28 @@ func (api objectAPIHandlers) PutBucketPolicyHandler(w http.ResponseWriter, r *ht
 		}, r.URL)
 		return
 	}
+
+	// Analyze the bucket policy to find specific permissions
+	for _, statement := range bucketPolicy.Statements {
+		if statement.Effect == "Allow" {
+			for principal := range statement.Principal.AWS {
+				if principal == "*" {
+					// Check if the "s3:GetObject" action is present in the ActionSet
+					if _, ok := statement.Actions[policy.GetObjectAction]; ok {
+						for resource := range statement.Resources {
+							// Extract the object name from the resource
+							objectName := resource.Pattern // Assuming the Pattern contains the object name
+							bucketName := resource.BucketName // Extracting the bucket name if needed
+							// TODO: Do something with the objectName and bucketName
+							logger.Info("Object in bucket %s made publicly readable: %s\n", bucketName, objectName)
+						}
+					}
+				}
+			}
+		}
+	}
+
+
 
 	// Version in policy must not be empty
 	if bucketPolicy.Version == "" {
