@@ -250,7 +250,7 @@ require (
 	cloud.google.com/go/iam v1.1.1 // indirect
 	github.com/Azure/azure-pipeline-go v0.2.3 // indirect
 	github.com/Azure/go-ntlmssp v0.0.0-20221128193559-754e69321358 // indirect
-	github.com/SaoNetwork/sao-client-go v0.0.1
+	github.com/SaoNetwork/sao-client-go v0.0.2
 	github.com/apache/thrift v0.18.1 // indirect
 	github.com/armon/go-metrics v0.4.0 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect

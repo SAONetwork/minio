@@ -19,8 +19,12 @@ package cmd
 
 import (
 	"compress/gzip"
+	"context"
+	"github.com/SaoNetwork/sao-client-go/sdk"
+	"github.com/mitchellh/go-homedir"
 	"net"
 	"net/http"
+	"os"
 
 	"github.com/klauspost/compress/gzhttp"
 	"github.com/minio/console/restapi"
@@ -83,6 +87,8 @@ func setObjectLayer(o ObjectLayer) {
 type objectAPIHandlers struct {
 	ObjectAPI func() ObjectLayer
 	CacheAPI  func() CacheObjectLayer
+	SaoClient *sdk.SaoClientApi
+	DidManagerId string
 }
 
 // getHost tries its best to return the request host.
@@ -186,10 +192,57 @@ var rejectedBucketAPIs = []rejectedAPI{
 
 // registerAPIRouter - registers S3 compatible APIs.
 func registerAPIRouter(router *mux.Router) {
+	// Load configuration from file
+	configPath := os.Getenv("SAO_CONFIG_PATH")
+	if configPath == "" {
+		configPath = "~/.sao-cli/config.toml"
+	}
+
+	// Expand the ~ symbol into the current user's home directory
+	configPath, err := homedir.Expand(configPath)
+	if err != nil {
+		logger.Error("Error expanding home directory in config path", err)
+		return
+	}
+
+	// Load configuration from file
+	config, err := loadSaoConfig(configPath)
+	if err != nil {
+		logger.Error("Error loading configuration", err)
+		return
+	}
+
+	nodeUrl := config.Gateway
+	chainUrl := config.ChainAddress
+	keyName := config.KeyName
+
+	// Get KeyHome and SaoApiUrl from environment variables
+	keyHome := os.Getenv("SAO_KEYRING_HOME")
+	if keyHome == "" {
+		keyHome = "~/.sao"
+	}
+	keyHome, err = homedir.Expand(keyHome)
+	if err != nil {
+		logger.Error("Error expanding home directory in config path", err)
+		return
+	}
+
+	ctx := context.Background()
+	client, err := sdk.NewSaoClientApi(ctx, nodeUrl, chainUrl, keyName, keyHome)
+	if err != nil {
+		logger.Error("Error creating Sao client", err)
+		return
+	}
+	didManager, _, err := client.GetDidManager(ctx, keyName)
+	if err != nil {
+		return
+	}
 	// Initialize API.
 	api := objectAPIHandlers{
 		ObjectAPI: newObjectLayerFn,
 		CacheAPI:  newCachedObjectLayerFn,
+		SaoClient: client,
+		DidManagerId: didManager.Id,
 	}
 
 	// API Router

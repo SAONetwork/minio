@@ -378,7 +378,6 @@ func (er erasureObjects) fetchSaoDataId(ctx context.Context, didManagerId, objec
 	return modelResponse.Model.Data, nil
 }
 
-
 func (er erasureObjects) fetchSaoData(ctx context.Context, didManagerId, object, bucket string) ([]byte, error) {
 	// Fetch the dataId for the object
 	dataId, err := er.fetchSaoDataId(ctx, didManagerId, object, bucket)
@@ -1121,7 +1120,7 @@ func healObjectVersionsDisparity(bucket string, entry metaCacheEntry) error {
 
 // putObject wrapper for erasureObjects PutObject
 func (er erasureObjects) putObject(ctx context.Context, bucket string, object string, r *PutObjReader, opts ObjectOptions) (objInfo ObjectInfo, err error) {
-	logger.Error("start erasure put")
+	logger.Info("Putting object", zap.String("bucket", bucket), zap.String("object", object))
 	auditObjectErasureSet(ctx, object, &er)
 
 	data := r.Reader

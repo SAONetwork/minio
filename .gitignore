@@ -3,6 +3,7 @@ cover.out
 *~
 minio
 !*/
+data/
 site/
 **/*.test
 **/*.sublime-workspace
