@@ -140,8 +140,14 @@ func (api objectAPIHandlers) PutBucketPolicyHandler(w http.ResponseWriter, r *ht
 		}
 	}
 
+	// If the model doesn't exist, read the policy from local server
 	if err != nil {
 		logger.Info("Unable to read original bucket policy from SAO", zap.Error(err))
+		if strings.Contains(err.Error(), "no route to host") {
+			writeErrorResponse(ctx, w, toAPIError(ctx, err), r.URL)
+			return
+		}
+
 		originalBucketPolicy, err = globalPolicySys.Get(bucket)
 		if err != nil {
 			logger.Error("Unable to read original bucket policy", zap.Error(err))
@@ -175,20 +181,6 @@ func (api objectAPIHandlers) PutBucketPolicyHandler(w http.ResponseWriter, r *ht
 		return
 	}
 
-	updatedAt, err := globalBucketMetadataSys.Update(ctx, bucket, bucketPolicyConfig, configData)
-	if err != nil {
-		writeErrorResponse(ctx, w, toAPIError(ctx, err), r.URL)
-		return
-	}
-
-	// Call site replication hook.
-	logger.LogIf(ctx, globalSiteReplicationSys.BucketMetaHook(ctx, madmin.SRBucketMeta{
-		Type:      madmin.SRBucketMetaTypePolicy,
-		Bucket:    bucket,
-		Policy:    bucketPolicyBytes,
-		UpdatedAt: updatedAt,
-	}))
-
 	// Marshal the bucket policy to JSON
 	jsonData, err := json.Marshal(bucketPolicy)
 	if err != nil {
@@ -201,12 +193,12 @@ func (api objectAPIHandlers) PutBucketPolicyHandler(w http.ResponseWriter, r *ht
 		// Model exists, update it
 
 		// print jsonData
-		logger.Info( "jsonData", zap.String("jsonData", string(jsonData)))
+		logger.Info("jsonData", zap.String("jsonData", string(jsonData)))
 		// print content
-		logger.Info( "original content", zap.String("content", string(content)))
+		logger.Info("original content", zap.String("content", string(content)))
 
 		//print modelResponse.Model.Data
-		logger.Info( "modelResponse.Model.Data", zap.String("modelResponse.Model.Data", modelResponse.Model.Data))
+		logger.Info("modelResponse.Model.Data", zap.String("modelResponse.Model.Data", modelResponse.Model.Data))
 		err := api.SaoClient.UpdateModelQuick(ctx, modelResponse.Model.Data, jsonData, bucket, 365, 30, false, 1)
 		if err != nil {
 			if strings.Contains(err.Error(), "No differences found") {
@@ -229,6 +221,20 @@ func (api objectAPIHandlers) PutBucketPolicyHandler(w http.ResponseWriter, r *ht
 		}
 		logger.Info("Bucket policy model created", zap.String("dataId", dataId))
 	}
+
+	updatedAt, err := globalBucketMetadataSys.Update(ctx, bucket, bucketPolicyConfig, configData)
+	if err != nil {
+		writeErrorResponse(ctx, w, toAPIError(ctx, err), r.URL)
+		return
+	}
+
+	// Call site replication hook.
+	logger.LogIf(ctx, globalSiteReplicationSys.BucketMetaHook(ctx, madmin.SRBucketMeta{
+		Type:      madmin.SRBucketMetaTypePolicy,
+		Bucket:    bucket,
+		Policy:    bucketPolicyBytes,
+		UpdatedAt: updatedAt,
+	}))
 
 	// Success.
 	writeSuccessNoContent(w)
